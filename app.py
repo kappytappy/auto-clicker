@@ -73,30 +73,69 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title("Auto Clicker")
-        root.geometry("300x230")
+        root.geometry("300x265")
         root.resizable(False, False)
 
         self.button_var = tk.StringVar(value="Left")
-        self.interval_var = tk.StringVar(value="1000")
+        self.cps_var = tk.StringVar(value="1")
+        self.delay_var = tk.StringVar(value="1000")
         self.status_var = tk.StringVar(value="Stopped — press F6 or START")
+        self._syncing = False
+        self.cps_var.trace_add("write", self._cps_changed)
+        self.delay_var.trace_add("write", self._delay_changed)
 
         frm = ttk.Frame(root, padding=16)
         frm.pack(fill="both", expand=True)
 
-        ttk.Label(frm, text="Click every (ms):").grid(row=0, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.interval_var, width=10).grid(row=0, column=1, sticky="w", padx=8)
+        ttk.Label(frm, text="Clicks per second:").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.cps_var, width=10).grid(row=0, column=1, sticky="w", padx=8)
 
-        ttk.Label(frm, text="Mouse button:").grid(row=1, column=0, sticky="w", pady=8)
+        ttk.Label(frm, text="Delay between clicks (ms):").grid(row=1, column=0, sticky="w", pady=8)
+        ttk.Entry(frm, textvariable=self.delay_var, width=10).grid(row=1, column=1, sticky="w", padx=8)
+
+        ttk.Label(frm, text="Mouse button:").grid(row=2, column=0, sticky="w", pady=8)
         ttk.Combobox(frm, textvariable=self.button_var, values=["Left", "Right", "Middle"],
-                     width=8, state="readonly").grid(row=1, column=1, sticky="w", padx=8)
+                     width=8, state="readonly").grid(row=2, column=1, sticky="w", padx=8)
 
         self.toggle_btn = ttk.Button(frm, text="START", command=self.toggle)
-        self.toggle_btn.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
+        self.toggle_btn.grid(row=3, column=0, columnspan=2, pady=10, sticky="ew")
 
         ttk.Label(frm, textvariable=self.status_var, wraplength=260).grid(
-            row=3, column=0, columnspan=2, sticky="w")
+            row=4, column=0, columnspan=2, sticky="w")
         ttk.Label(frm, text="F6 toggles clicking anywhere.", foreground="gray").grid(
-            row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+            row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+    @staticmethod
+    def _fmt_cps(cps):
+        return f"{cps:.2f}".rstrip("0").rstrip(".")
+
+    def _cps_changed(self, *a):
+        if self._syncing:
+            return
+        try:
+            cps = float(self.cps_var.get())
+        except ValueError:
+            return
+        if cps <= 0:
+            return
+        cps = min(cps, 1000.0)
+        self._syncing = True
+        self.delay_var.set(str(int(round(1000.0 / cps))))
+        self._syncing = False
+
+    def _delay_changed(self, *a):
+        if self._syncing:
+            return
+        try:
+            delay = int(float(self.delay_var.get()))
+        except ValueError:
+            return
+        if delay <= 0:
+            return
+        delay = max(1, delay)
+        self._syncing = True
+        self.cps_var.set(self._fmt_cps(1000.0 / delay))
+        self._syncing = False
 
     def start_worker(self, interval_s, button):
         self.worker = threading.Thread(
@@ -111,10 +150,10 @@ class App:
         clicking = on
         if on:
             try:
-                interval_ms = max(1, int(self.interval_var.get()))
+                interval_ms = max(1, int(float(self.delay_var.get())))
             except ValueError:
                 interval_ms = 1000
-                self.interval_var.set("1000")
+                self.delay_var.set("1000")
             click_count = 0
             self.start_worker(interval_ms / 1000.0, self.button_var.get())
             self.toggle_btn.config(text="STOP")
